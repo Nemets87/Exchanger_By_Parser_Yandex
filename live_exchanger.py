@@ -1,9 +1,8 @@
-exchanger by parser yandex
---------------------------
-
 import sqlite3
 import time
 import random
+import sys
+import json
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -13,10 +12,11 @@ from selenium.webdriver.firefox.service import Service
 from selenium.common.exceptions import ElementClickInterceptedException
 
 # --------------------------------------------------------------
-# НАСТРОЙКИ
+# КОНФИГУРАЦИЯ
 # --------------------------------------------------------------
 DB_NAME = 'exchanger.db'
-GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
+# Локальный путь к geckodriver (если он есть). Если None – Selenium Manager.
+LOCAL_GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
 # --------------------------------------------------------------
 # 1. ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
@@ -60,14 +60,16 @@ def get_balances(user_id=1):
 # --------------------------------------------------------------
 # 3. ПАРСИНГ ЖИВЫХ КУРСОВ (АНТИ-КАПЧА + УДАЛЕНИЕ ПОМЕХ)
 # --------------------------------------------------------------
-def get_live_rates():
+def get_live_rates(headless=False, use_local_driver=True):
     """
     Получает курсы USD/RUB и EUR/RUB с Яндекс.Конвертера.
-    Стелс-режим, обработка капчи, автоматическое скрытие всплывающих окон.
-    Возвращает {'USD_RUB': float, 'EUR_RUB': float} или None при ошибке.
+    headless: запускать ли браузер без окна (для CI нужно True)
+    use_local_driver: если True – использовать LOCAL_GECKODRIVER_PATH
     """
-    print("🟢 Шаг 0: Запуск Firefox в стелс-режиме...")
+    print("🟢 Шаг 0: Запуск Firefox...")
     firefox_options = Options()
+    if headless:
+        firefox_options.add_argument('--headless')
     firefox_options.add_argument("--disable-blink-features=AutomationControlled")
     firefox_options.set_preference("dom.webnotifications.enabled", False)
     firefox_options.set_preference("dom.push.enabled", False)
@@ -75,11 +77,13 @@ def get_live_rates():
         "general.useragent.override",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
     )
-    # firefox_options.add_argument('--headless')
 
     try:
-        service = Service(executable_path=GECKODRIVER_PATH)
-        driver = webdriver.Firefox(options=firefox_options, service=service)
+        if use_local_driver and LOCAL_GECKODRIVER_PATH:
+            service = Service(executable_path=LOCAL_GECKODRIVER_PATH)
+            driver = webdriver.Firefox(options=firefox_options, service=service)
+        else:
+            driver = webdriver.Firefox(options=firefox_options)
         print("🟢 Браузер успешно запущен.")
     except Exception as e:
         print(f"❌ Не удалось запустить Firefox: {e}")
@@ -117,7 +121,6 @@ def get_live_rates():
 
         # Функция для скрытия перекрывающих окон (не трогаем HeaderForm)
         def remove_overlays():
-            """Скрывает только модальные окна и попапы, но не строку поиска."""
             overlays = driver.find_elements(By.XPATH,
                 "//*[contains(@class,'DistributionSplashScreenModalAddonBefore') or "
                 "contains(@class,'modal') or contains(@class,'popup') or "
@@ -178,13 +181,11 @@ def get_live_rates():
                     option = wait.until(EC.element_to_be_clickable((By.XPATH, option_xpath)))
                     driver.execute_script("arguments[0].click();", option)
 
-                # Ожидаем обновления текста кнопки
                 wait.until(lambda d: currency_code in d.find_element(By.XPATH, switcher_xpath).text.upper())
                 print(f"  ✅ Кнопка теперь: {driver.find_element(By.XPATH, switcher_xpath).text}")
             else:
                 print(f"  ✅ Валюта {currency_code} уже выбрана.")
 
-            # Поле ввода курса
             input_xpath = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[2]/div/span/input"
             print("  🔄 Ожидаю значение курса...")
             wait.until(lambda d: d.find_element(By.XPATH, input_xpath).get_attribute('value') != '')
@@ -216,7 +217,8 @@ def exchange_operation():
     print("=" * 50)
 
     print("⏳ Загружаем курсы с биржи...")
-    live = get_live_rates()
+    # Для локального обмена используем видимый браузер и локальный драйвер
+    live = get_live_rates(headless=False, use_local_driver=True)
     if live is None:
         print("⚠️ Не удалось загрузить курсы. Используем резервные.")
         usd_rub = 70.0
@@ -244,6 +246,7 @@ def exchange_operation():
         ('EUR', 'USD'): usd_to_eur
     }
 
+    # --- Шаг 1: Выбор целевой валюты ---
     print("\nВведите какую валюту желаете получить:")
     print("1. RUB")
     print("2. USD")
@@ -255,6 +258,7 @@ def exchange_operation():
         return
     target = currency_map[target_choice]
 
+    # --- Шаг 2: Сумма ---
     try:
         amount = float(input(f"Какая сумма Вас интересует ({target})? "))
         if amount <= 0:
@@ -264,6 +268,7 @@ def exchange_operation():
         print("❌ Некорректное число!")
         return
 
+    # --- Шаг 3: Исходная валюта ---
     print("\nКакую валюту готовы предложить взамен?")
     print("1. RUB")
     print("2. USD")
@@ -310,16 +315,35 @@ def exchange_operation():
         print(f"  {cur_name}: {bal:.2f}")
 
 # --------------------------------------------------------------
-# 5. ГЛАВНЫЙ ЦИКЛ
+# 5. ГЛАВНЫЙ ЦИКЛ ПРОГРАММЫ
 # --------------------------------------------------------------
 def main():
-    print("🏦 Обменный пункт с живыми курсами готов к работе.")
-    while True:
-        exchange_operation()
-        again = input("\nХотите совершить ещё один обмен? (y/n): ").strip().lower()
-        if again != 'y':
-            print("👋 До свидания!")
-            break
+    # Проверяем аргументы командной строки
+    args = sys.argv[1:]
+    fetch_only = '--fetch-rates' in args
+    headless = '--headless' in args
+    # Если локально и не указан headless, запускаем видимый
+    use_local = not headless  # в CI мы передадим --headless, и use_local станет False
+
+    if fetch_only:
+        print("📡 Режим получения курсов...")
+        rates = get_live_rates(headless=headless, use_local_driver=use_local)
+        if rates:
+            print(f"USD/RUB = {rates['USD_RUB']}")
+            print(f"EUR/RUB = {rates['EUR_RUB']}")
+            with open('rates.json', 'w', encoding='utf-8') as f:
+                json.dump(rates, f, indent=2)
+            print("✅ Курсы сохранены в rates.json")
+        else:
+            print("❌ Не удалось получить курсы.")
+    else:
+        print("🏦 Обменный пункт с живыми курсами готов к работе.")
+        while True:
+            exchange_operation()
+            again = input("\nХотите совершить ещё один обмен? (y/n): ").strip().lower()
+            if again != 'y':
+                print("👋 До свидания!")
+                break
 
 if __name__ == "__main__":
     init_db()
