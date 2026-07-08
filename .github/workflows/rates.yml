@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '0 8 * * *'   # каждый день в 8:00 UTC
+    - cron: '0 8 * * *'
 
 jobs:
   fetch-rates:
@@ -18,16 +18,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Firefox
+      # Убедимся, что Firefox установлен (в ubuntu-latest он есть)
+      - name: Ensure Firefox is installed
         run: |
-          sudo apt-get update
-          sudo apt-get install -y firefox
+          which firefox || sudo apt-get update && sudo apt-get install -y firefox
 
       - name: Install Python dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Fetch live rates
+        env:
+          FIREFOX_BINARY: /snap/firefox/current/usr/lib/firefox/firefox
         run: python live_exchanger.py --fetch-rates --headless
 
       - name: Upload rates artifact
