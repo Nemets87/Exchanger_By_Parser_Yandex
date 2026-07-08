@@ -1,0 +1,38 @@
+name: Update Exchange Rates
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 8 * * *'   # каждый день в 8:00 UTC
+
+jobs:
+  fetch-rates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Firefox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y firefox
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Fetch live rates
+        run: python live_exchanger.py --fetch-rates --headless
+
+      - name: Upload rates artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exchange-rates
+          path: rates.json
+          retention-days: 7
