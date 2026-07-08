@@ -70,6 +70,9 @@ def get_live_rates(headless=False, use_local_driver=True):
     firefox_options = Options()
     if headless:
         firefox_options.add_argument('--headless')
+    # Если передан путь к бинарнику – используем его
+    if firefox_binary:
+        firefox_options.binary_location = firefox_binary
     firefox_options.add_argument("--disable-blink-features=AutomationControlled")
     firefox_options.set_preference("dom.webnotifications.enabled", False)
     firefox_options.set_preference("dom.push.enabled", False)
@@ -318,16 +321,25 @@ def exchange_operation():
 # 5. ГЛАВНЫЙ ЦИКЛ ПРОГРАММЫ
 # --------------------------------------------------------------
 def main():
-    # Проверяем аргументы командной строки
     args = sys.argv[1:]
     fetch_only = '--fetch-rates' in args
     headless = '--headless' in args
-    # Если локально и не указан headless, запускаем видимый
-    use_local = not headless  # в CI мы передадим --headless, и use_local станет False
+
+    # Определяем, какой драйвер использовать
+    use_local = not headless  # в CI (headless) не используем локальный драйвер
+
+    # Для CI можно передать путь к Firefox через аргумент или переменную окружения
+    firefox_binary = os.environ.get('FIREFOX_BINARY')  # переменная окружения
+    # Если передан аргумент --firefox-bin, берём его
+    for arg in args:
+        if arg.startswith('--firefox-bin='):
+            firefox_binary = arg.split('=', 1)[1]
+            break
 
     if fetch_only:
         print("📡 Режим получения курсов...")
-        rates = get_live_rates(headless=headless, use_local_driver=use_local)
+        rates = get_live_rates(headless=headless, use_local_driver=use_local, firefox_binary=firefox_binary)
+        # ... остальное без изменений
         if rates:
             print(f"USD/RUB = {rates['USD_RUB']}")
             print(f"EUR/RUB = {rates['EUR_RUB']}")
