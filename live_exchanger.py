@@ -74,7 +74,7 @@ class ExchangeRateFetcher:
     CANCEL_BTN_ABSOLUTE = "/html/body/main/div[2]/div/div/div[2]/div/div/div/div[3]/button"
     ROBOT_CANCEL_ABSOLUTE = "/html/body/div[1]/div/main/div/form/div[3]/div/div[1]/div[1]"
 
-def __init__(self, headless=False, use_local_driver=True, firefox_binary=None):
+ def __init__(self, headless=False, use_local_driver=True, firefox_binary=None):
         self.headless = headless
         self.use_local_driver = use_local_driver
         self.firefox_binary = firefox_binary   # <-- новый параметр
