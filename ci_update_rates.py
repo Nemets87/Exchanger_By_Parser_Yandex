@@ -5,11 +5,12 @@ from live_exchanger import ExchangeRateFetcher, DB_NAME
 
 def update_rates_in_db():
     print("Запуск обновления курсов в CI...")
-    firefox_binary = os.environ.get('FIREFOX_BINARY')
+    # В CI мы передадим /usr/bin/firefox-esr, но если не передали – ставим дефолт
+    firefox_binary = os.environ.get('FIREFOX_BINARY', '/usr/bin/firefox-esr')
     fetcher = ExchangeRateFetcher(
         headless=True,
         use_local_driver=False,
-        firefox_binary=firefox_binary   # передаём путь к Firefox
+        firefox_binary=firefox_binary
     )
     rates = fetcher.get_rates()
     if rates is None:
