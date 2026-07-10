@@ -1,39 +1,44 @@
-name: Update Exchange Rates
+name: Daily Rates Update
 
 on:
-  push:
-    branches: [ main ]
   schedule:
-    - cron: '0 8 * * *'
+    - cron: '0 8 * * *'   # каждый день в 8:00 UTC
+  workflow_dispatch:        # позволяет запускать вручную
+
+permissions:
+  contents: write           # разрешаем пушить коммиты
 
 jobs:
-  fetch-rates:
+  update-rates:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}   # токен для пуша
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # Убедимся, что Firefox установлен (в ubuntu-latest он есть)
-      - name: Ensure Firefox is installed
+      - name: Install Firefox
         run: |
-          which firefox || sudo apt-get update && sudo apt-get install -y firefox
+          sudo apt-get update
+          sudo apt-get install -y firefox
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: pip install selenium
 
-      - name: Fetch live rates
+      - name: Fetch rates and update database
         env:
           FIREFOX_BINARY: /snap/firefox/current/usr/lib/firefox/firefox
-        run: python live_exchanger.py --fetch-rates --headless
+        run: python ci_update_rates.py
 
-      - name: Upload rates artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: exchange-rates
-          path: rates.json
-          retention-days: 7
+      - name: Commit and push updated database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add exchanger.db
+          git diff --staged --quiet || git commit -m "Обновление курсов валют [skip ci]"
+          git push
