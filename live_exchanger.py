@@ -1,6 +1,7 @@
 import sqlite3
 import time
 import random
+from datetime import date
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -10,11 +11,15 @@ from selenium.webdriver.firefox.service import Service
 from selenium.common.exceptions import ElementClickInterceptedException
 
 # --------------------------------------------------------------
+# Глобальное имя базы данных
+# --------------------------------------------------------------
+DB_NAME = 'exchanger.db'
+
+# --------------------------------------------------------------
 # 1. Класс для работы с базой данных
 # --------------------------------------------------------------
 class Database:
-    """Управление балансом в SQLite (в точности как init_db и get_balances)."""
-    def __init__(self, db_name='exchanger.db'):
+    def __init__(self, db_name=DB_NAME):
         self.db_name = db_name
         with sqlite3.connect(self.db_name) as conn:
             cur = conn.cursor()
@@ -49,10 +54,9 @@ class Database:
             cur.execute(f"UPDATE users_balance SET Balance_{currency} = Balance_{currency} + ? WHERE UserID = ?", (amount, user_id))
 
 # --------------------------------------------------------------
-# 2. Класс для получения курсов (копия get_live_rates с теми же XPath)
+# 2. Класс для получения курсов (Selenium + анти-капча)
 # --------------------------------------------------------------
 class ExchangeRateFetcher:
-    """Парсер курсов с усиленной защитой от любых всплывающих окон."""
     URL = "https://yandex.ru/search/?text=%D0%BA%D1%83%D1%80%D1%81+usd+%D0%BA+%D1%80%D1%83%D0%B1%D0%BB%D1%8E&lr=39&clid=2261451&win=620"
     GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
@@ -94,7 +98,6 @@ class ExchangeRateFetcher:
         print("🟢 Браузер успешно запущен.")
 
     def _remove_overlays(self):
-        """Расширенная очистка: теперь знает про DistributionSplashScreenModalScene и подобные."""
         evil_classes = [
             'DistributionSplashScreenModalAddonBefore',
             'DistributionSplashScreenModalScene',
@@ -108,7 +111,6 @@ class ExchangeRateFetcher:
                         self.driver.execute_script("arguments[0].style.display = 'none';", el)
             except:
                 pass
-        # Дополнительно скрываем элементы с ролью dialog, которые могли проскользнуть
         try:
             dialogs = self.driver.find_elements(By.XPATH, "//*[@role='dialog']")
             for d in dialogs:
@@ -133,7 +135,6 @@ class ExchangeRateFetcher:
         return False
 
     def _safe_click(self, element):
-        """Клик с автоматическим удалением помех при перехвате."""
         try:
             element.click()
         except ElementClickInterceptedException:
@@ -156,7 +157,6 @@ class ExchangeRateFetcher:
 
     def _fetch_single_rate(self, currency):
         wait = WebDriverWait(self.driver, 20)
-        # Перед поиском кнопки гарантированно чистим экран
         self._remove_overlays()
         time.sleep(0.3)
 
@@ -166,7 +166,7 @@ class ExchangeRateFetcher:
 
         if currency not in current_text.upper():
             print(f"  🔄 Переключаю на {currency}...")
-            self._safe_click(switcher)  # клик с защитой
+            self._safe_click(switcher)
             time.sleep(random.uniform(0.5, 0.8))
             self._remove_overlays()
             time.sleep(0.3)
@@ -176,7 +176,6 @@ class ExchangeRateFetcher:
             option = self._find_with_fallback(stable_opt, absolute_opt, f"опция {currency}")
             self._safe_click(option)
 
-            # Ждём обновления текста кнопки
             wait.until(lambda d: currency in d.find_element(By.XPATH, self.SWITCHER_STABLE).text.upper()
                        if d.find_elements(By.XPATH, self.SWITCHER_STABLE)
                        else currency in d.find_element(By.XPATH, self.SWITCHER_ABSOLUTE).text.upper())
@@ -246,14 +245,35 @@ class ExchangeRateFetcher:
 # 3. Класс обменника валют
 # --------------------------------------------------------------
 class CurrencyExchanger:
-    """Логика обмена, скопированная из exchange_operation."""
     CURRENCY_MAP = {'1': 'RUB', '2': 'USD', '3': 'EUR'}
 
     def __init__(self, database, fetcher=None):
         self.db = database
         self.fetcher = fetcher or ExchangeRateFetcher()
 
+    def _load_rates_from_db(self):
+        """Пытается получить сегодняшние курсы из таблицы rates."""
+        today = date.today().isoformat()
+        with sqlite3.connect(self.db.db_name) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT CurrencyFrom, CurrencyTo, Rate FROM rates WHERE UpdatedAt = ?", (today,))
+            rows = cur.fetchall()
+            if len(rows) >= 2:
+                rates = {}
+                for cur_from, cur_to, rate in rows:
+                    if cur_from == 'USD' and cur_to == 'RUB':
+                        rates['USD_RUB'] = rate
+                    elif cur_from == 'EUR' and cur_to == 'RUB':
+                        rates['EUR_RUB'] = rate
+                if 'USD_RUB' in rates and 'EUR_RUB' in rates:
+                    print("📦 Использую курсы из локальной базы данных.")
+                    return rates['USD_RUB'], rates['EUR_RUB']
+        return None
+
     def _load_rates(self):
+        db_rates = self._load_rates_from_db()
+        if db_rates:
+            return db_rates
         print("⏳ Загружаем курсы с биржи...")
         live = self.fetcher.get_rates()
         if live is None:
