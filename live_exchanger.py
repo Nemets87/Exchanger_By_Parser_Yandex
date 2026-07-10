@@ -57,6 +57,7 @@ class Database:
 # 2. Класс для получения курсов (Selenium + анти-капча)
 # --------------------------------------------------------------
 class ExchangeRateFetcher:
+    """Парсер курсов с усиленной защитой от любых всплывающих окон."""
     URL = "https://yandex.ru/search/?text=%D0%BA%D1%83%D1%80%D1%81+usd+%D0%BA+%D1%80%D1%83%D0%B1%D0%BB%D1%8E&lr=39&clid=2261451&win=620"
     GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
@@ -74,10 +75,10 @@ class ExchangeRateFetcher:
     CANCEL_BTN_ABSOLUTE = "/html/body/main/div[2]/div/div/div[2]/div/div/div/div[3]/button"
     ROBOT_CANCEL_ABSOLUTE = "/html/body/div[1]/div/main/div/form/div[3]/div/div[1]/div[1]"
 
- def __init__(self, headless=False, use_local_driver=True, firefox_binary=None):
+    def __init__(self, headless=False, use_local_driver=True, firefox_binary=None):
         self.headless = headless
         self.use_local_driver = use_local_driver
-        self.firefox_binary = firefox_binary   # <-- новый параметр
+        self.firefox_binary = firefox_binary
         self.driver = None
 
     def _start_browser(self):
@@ -91,7 +92,6 @@ class ExchangeRateFetcher:
             "general.useragent.override",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
         )
-        # Если передан путь к Firefox – используем его (для CI)
         if self.firefox_binary:
             options.binary_location = self.firefox_binary
 
