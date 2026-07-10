@@ -1,11 +1,17 @@
+import os
 import sqlite3
 from datetime import date
 from live_exchanger import ExchangeRateFetcher, DB_NAME
 
 def update_rates_in_db():
-    """Запрашивает живые курсы и сохраняет их в таблицу rates БД."""
     print("Запуск обновления курсов в CI...")
-    fetcher = ExchangeRateFetcher(headless=True, use_local_driver=False)
+    # Получаем путь к Firefox из переменной окружения
+    firefox_binary = os.environ.get('FIREFOX_BINARY')
+    fetcher = ExchangeRateFetcher(
+        headless=True,
+        use_local_driver=False,
+        firefox_binary=firefox_binary
+    )
     rates = fetcher.get_rates()
     if rates is None:
         print("Не удалось получить живые курсы. Обновление прервано.")
