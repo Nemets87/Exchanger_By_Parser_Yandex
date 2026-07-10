@@ -1,6 +1,6 @@
-name: Daily Rates Update 
+name: Daily Rates Update
 
-on: 
+on:
   schedule:
     - cron: '0 8 * * *'
   workflow_dispatch:
@@ -22,18 +22,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Remove snap Firefox and install Firefox ESR
+      - name: Remove snap Firefox and install deb Firefox from Mozilla PPA
         run: |
           sudo snap remove firefox 2>/dev/null || true
+          sudo add-apt-repository ppa:mozillateam/ppa -y
           sudo apt-get update
-          sudo apt-get install -y firefox-esr
+          sudo apt-get install -y firefox
 
       - name: Install Python dependencies
         run: pip install selenium
 
       - name: Fetch rates and update database
         env:
-          FIREFOX_BINARY: /usr/bin/firefox-esr
+          FIREFOX_BINARY: /usr/bin/firefox
         run: python ci_update_rates.py
 
       - name: Commit and push updated database
