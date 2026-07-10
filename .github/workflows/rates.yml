@@ -22,9 +22,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Remove snap Firefox (if present) and install via apt
+      - name: Install Firefox (apt)
         run: |
-          sudo snap remove firefox || true
           sudo apt-get update
           sudo apt-get install -y firefox
 
@@ -33,7 +32,7 @@ jobs:
 
       - name: Fetch rates and update database
         env:
-          FIREFOX_BINARY: /usr/bin/firefox
+          FIREFOX_BINARY: /usr/bin/firefox   # <-- стандартный путь
         run: python ci_update_rates.py
 
       - name: Commit and push updated database
