@@ -22,12 +22,20 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Remove snap Firefox and install deb Firefox from Mozilla PPA
+      - name: Remove snap Firefox, snap geckodriver and install deb Firefox
         run: |
+          # Полностью удаляем snap Firefox
           sudo snap remove firefox 2>/dev/null || true
+          # Удаляем snap geckodriver (если есть)
+          sudo snap remove geckodriver 2>/dev/null || true
+          # Очищаем PATH от snap, чтобы Selenium Manager не видел старый драйвер
+          export PATH=$(echo $PATH | tr ':' '\n' | grep -v '/snap/bin' | tr '\n' ':')
+          # Добавляем PPA от Mozilla с deb-пакетами Firefox
           sudo add-apt-repository ppa:mozillateam/ppa -y
           sudo apt-get update
           sudo apt-get install -y firefox
+          # Убедимся, что Firefox действительно установлен и доступен
+          which firefox && firefox --version
 
       - name: Install Python dependencies
         run: pip install selenium
