@@ -1,0 +1,5 @@
+error*.png
+captcha*.png
+debug*.png
+__pycache__/
+.env
