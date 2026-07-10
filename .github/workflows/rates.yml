@@ -22,17 +22,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Firefox (apt)
+      - name: Remove snap Firefox and install Firefox ESR
         run: |
+          sudo snap remove firefox 2>/dev/null || true
           sudo apt-get update
-          sudo apt-get install -y firefox
+          sudo apt-get install -y firefox-esr
 
       - name: Install Python dependencies
         run: pip install selenium
 
       - name: Fetch rates and update database
         env:
-          FIREFOX_BINARY: /usr/bin/firefox   # <-- стандартный путь
+          FIREFOX_BINARY: /usr/bin/firefox-esr
         run: python ci_update_rates.py
 
       - name: Commit and push updated database
