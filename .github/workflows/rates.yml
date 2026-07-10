@@ -3,7 +3,7 @@ name: Daily Rates Update
 on:
   schedule:
     - cron: '0 8 * * *'   # каждый день в 8:00 UTC
-  workflow_dispatch:        # позволяет запускать вручную
+  workflow_dispatch:        # ручной запуск по кнопке
 
 permissions:
   contents: write           # разрешаем пушить коммиты
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}   # токен для пуша
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
