@@ -74,9 +74,10 @@ class ExchangeRateFetcher:
     CANCEL_BTN_ABSOLUTE = "/html/body/main/div[2]/div/div/div[2]/div/div/div/div[3]/button"
     ROBOT_CANCEL_ABSOLUTE = "/html/body/div[1]/div/main/div/form/div[3]/div/div[1]/div[1]"
 
-    def __init__(self, headless=False, use_local_driver=True):
+    def __init__(self, headless=False, use_local_driver=True, firefox_binary=None):
         self.headless = headless
         self.use_local_driver = use_local_driver
+        self.firefox_binary = firefox_binary
         self.driver = None
 
     def _start_browser(self):
@@ -90,6 +91,10 @@ class ExchangeRateFetcher:
             "general.useragent.override",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
         )
+        # Устанавливаем бинарник, если передан
+        if self.firefox_binary:
+            options.binary_location = self.firefox_binary
+
         if self.use_local_driver:
             service = Service(executable_path=self.GECKODRIVER_PATH)
             self.driver = webdriver.Firefox(options=options, service=service)
