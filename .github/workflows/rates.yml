@@ -1,5 +1,5 @@
 name: Daily Rates Update
-
+ 
 on:
   schedule:
     - cron: '0 8 * * *'
