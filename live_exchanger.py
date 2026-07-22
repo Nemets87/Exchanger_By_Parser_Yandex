@@ -57,7 +57,7 @@ class Database:
 # 2. Класс для получения курсов (Selenium + анти-капча)
 # --------------------------------------------------------------
 class ExchangeRateFetcher:
-    """Парсер курсов с усиленной защитой от любых всплывающих окон."""
+    """Парсер курсов с усиленной защитой от любых всплывающих окон. Поддерживает Firefox и Chrome."""
     URL = "https://yandex.ru/search/?text=%D0%BA%D1%83%D1%80%D1%81+usd+%D0%BA+%D1%80%D1%83%D0%B1%D0%BB%D1%8E&lr=39&clid=2261451&win=620"
     GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
@@ -67,7 +67,7 @@ class ExchangeRateFetcher:
     OPTION_EUR_STABLE = "//*[contains(@class,'Select2-Option') and contains(.,'EUR')]"
     INPUT_STABLE = "//article[.//button[starts-with(@aria-label, 'Валюта:')]]//input[@type='text']"
 
-    # Абсолютные локаторы (резервные)
+    # Абсолютные локаторы (резервные) - без изменений
     SWITCHER_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/button"
     OPTION_USD_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/div/div/div[2]/div/div[1]"
     OPTION_EUR_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/div/div/div[3]/div/div[1]"
@@ -75,32 +75,44 @@ class ExchangeRateFetcher:
     CANCEL_BTN_ABSOLUTE = "/html/body/main/div[2]/div/div/div[2]/div/div/div/div[3]/button"
     ROBOT_CANCEL_ABSOLUTE = "/html/body/div[1]/div/main/div/form/div[3]/div/div[1]/div[1]"
 
-    def __init__(self, headless=False, use_local_driver=True, firefox_binary=None):
+    def __init__(self, headless=False, use_local_driver=True, firefox_binary=None, browser='firefox'):
         self.headless = headless
         self.use_local_driver = use_local_driver
         self.firefox_binary = firefox_binary
+        self.browser = browser  # 'firefox' или 'chrome'
         self.driver = None
 
     def _start_browser(self):
-        options = Options()
-        if self.headless:
-            options.add_argument('--headless')
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.set_preference("dom.webnotifications.enabled", False)
-        options.set_preference("dom.push.enabled", False)
-        options.set_preference(
-            "general.useragent.override",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
-        )
-        if self.firefox_binary:
-            options.binary_location = self.firefox_binary
+        if self.browser == 'chrome':
+            options = webdriver.ChromeOptions()
+            if self.headless:
+                options.add_argument('--headless')
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            # User-Agent для Chrome
+            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+            self.driver = webdriver.Chrome(options=options)
+        else:  # Firefox
+            options = Options()
+            if self.headless:
+                options.add_argument('--headless')
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.set_preference("dom.webnotifications.enabled", False)
+            options.set_preference("dom.push.enabled", False)
+            options.set_preference(
+                "general.useragent.override",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
+            )
+            if self.firefox_binary:
+                options.binary_location = self.firefox_binary
 
-        if self.use_local_driver:
-            service = Service(executable_path=self.GECKODRIVER_PATH)
-            self.driver = webdriver.Firefox(options=options, service=service)
-        else:
-            self.driver = webdriver.Firefox(options=options)
-        print("🟢 Браузер успешно запущен.")
+            if self.use_local_driver:
+                service = Service(executable_path=self.GECKODRIVER_PATH)
+                self.driver = webdriver.Firefox(options=options, service=service)
+            else:
+                self.driver = webdriver.Firefox(options=options)
+        print(f"🟢 Браузер {self.browser} успешно запущен.")
 
     def _remove_overlays(self):
         evil_classes = [
