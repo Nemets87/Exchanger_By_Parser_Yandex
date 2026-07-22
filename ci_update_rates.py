@@ -7,7 +7,7 @@ def update_rates_in_db():
     fetcher = ExchangeRateFetcher(
         headless=True,
         use_local_driver=False,
-        browser='chrome'           # ← Chrome вместо Firefox
+        browser='chrome'           # В CI всегда Chrome
     )
     rates = fetcher.get_rates()
     if rates is None:
