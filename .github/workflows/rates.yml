@@ -1,5 +1,5 @@
 name: Daily Rates Update
- 
+
 on:
   schedule:
     - cron: '0 8 * * *'
@@ -22,30 +22,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Remove all snap Firefox/geckodriver remnants and install clean Firefox
+      - name: Install Google Chrome
         run: |
-          # Удаляем snap версии (если они есть)
-          sudo snap remove firefox 2>/dev/null || true
-          sudo snap remove geckodriver 2>/dev/null || true
-          # Принудительно удаляем geckodriver из /snap/bin
-          sudo rm -f /snap/bin/geckodriver
-          # Очищаем PATH от snap-директории (чтобы Selenium Manager не видел старый драйвер)
-          export PATH=$(echo $PATH | tr ':' '\n' | grep -v '/snap/bin' | tr '\n' ':')
-          # Устанавливаем Firefox из PPA mozillateam (обычный deb-пакет)
-          sudo add-apt-repository ppa:mozillateam/ppa -y
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
           sudo apt-get update
-          sudo apt-get install -y firefox
-          # Проверяем, что Firefox действительно установлен и доступен
-          echo "Firefox binary path:"
-          which firefox
-          firefox --version
+          sudo apt-get install -y google-chrome-stable
 
       - name: Install Python dependencies
         run: pip install selenium
 
       - name: Fetch rates and update database
-        env:
-          FIREFOX_BINARY: /usr/bin/firefox
         run: python ci_update_rates.py
 
       - name: Commit and push updated database
