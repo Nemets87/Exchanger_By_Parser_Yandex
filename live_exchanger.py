@@ -67,7 +67,7 @@ class ExchangeRateFetcher:
     OPTION_EUR_STABLE = "//*[contains(@class,'Select2-Option') and contains(.,'EUR')]"
     INPUT_STABLE = "//article[.//button[starts-with(@aria-label, 'Валюта:')]]//input[@type='text']"
 
-    # Абсолютные локаторы (резервные) - без изменений
+    # Абсолютные локаторы (резервные)
     SWITCHER_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/button"
     OPTION_USD_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/div/div/div[2]/div/div[1]"
     OPTION_EUR_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/div/div/div[3]/div/div[1]"
@@ -90,7 +90,6 @@ class ExchangeRateFetcher:
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
-            # User-Agent для Chrome
             options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
             self.driver = webdriver.Chrome(options=options)
         else:  # Firefox
