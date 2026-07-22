@@ -1,15 +1,13 @@
-import os
 import sqlite3
 from datetime import date
 from live_exchanger import ExchangeRateFetcher, DB_NAME
 
 def update_rates_in_db():
     print("Запуск обновления курсов в CI (браузер Chrome)...")
-    # Firefox не нужен, Chrome подхватится автоматически
     fetcher = ExchangeRateFetcher(
         headless=True,
         use_local_driver=False,
-        browser='chrome'           # ← работаем через Chrome
+        browser='chrome'           # ← Chrome вместо Firefox
     )
     rates = fetcher.get_rates()
     if rates is None:
