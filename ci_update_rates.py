@@ -4,13 +4,12 @@ from datetime import date
 from live_exchanger import ExchangeRateFetcher, DB_NAME
 
 def update_rates_in_db():
-    print("Запуск обновления курсов в CI...")
-    # В CI мы передадим /usr/bin/firefox-esr, но если не передали – ставим дефолт
-    firefox_binary = os.environ.get('FIREFOX_BINARY', '/usr/bin/firefox-esr')
+    print("Запуск обновления курсов в CI (браузер Chrome)...")
+    # Firefox не нужен, Chrome подхватится автоматически
     fetcher = ExchangeRateFetcher(
         headless=True,
         use_local_driver=False,
-        firefox_binary=firefox_binary
+        browser='chrome'           # ← работаем через Chrome
     )
     rates = fetcher.get_rates()
     if rates is None:
