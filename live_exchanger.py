@@ -6,8 +6,8 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.common.exceptions import ElementClickInterceptedException
 
 # --------------------------------------------------------------
@@ -75,10 +75,9 @@ class ExchangeRateFetcher:
     CANCEL_BTN_ABSOLUTE = "/html/body/main/div[2]/div/div/div[2]/div/div/div/div[3]/button"
     ROBOT_CANCEL_ABSOLUTE = "/html/body/div[1]/div/main/div/form/div[3]/div/div[1]/div[1]"
 
-    def __init__(self, headless=False, use_local_driver=True, firefox_binary=None, browser='firefox'):
+    def __init__(self, headless=False, use_local_driver=True, browser='firefox'):
         self.headless = headless
         self.use_local_driver = use_local_driver
-        self.firefox_binary = firefox_binary
         self.browser = browser  # 'firefox' или 'chrome'
         self.driver = None
 
@@ -93,25 +92,38 @@ class ExchangeRateFetcher:
             options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
             self.driver = webdriver.Chrome(options=options)
         else:  # Firefox
-            options = Options()
+            options = FirefoxOptions()
             if self.headless:
                 options.add_argument('--headless')
+            # Приватный режим для стелса
+            options.add_argument('--private')
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.set_preference("dom.webnotifications.enabled", False)
             options.set_preference("dom.push.enabled", False)
+            options.set_preference("dom.webdriver.enabled", False)
+            options.set_preference("useAutomationExtension", False)
             options.set_preference(
                 "general.useragent.override",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
             )
-            if self.firefox_binary:
-                options.binary_location = self.firefox_binary
-
             if self.use_local_driver:
-                service = Service(executable_path=self.GECKODRIVER_PATH)
+                service = FirefoxService(executable_path=self.GECKODRIVER_PATH)
                 self.driver = webdriver.Firefox(options=options, service=service)
             else:
                 self.driver = webdriver.Firefox(options=options)
+            # Очищаем сессию для анонимности
+            self._clear_session()
         print(f"🟢 Браузер {self.browser} успешно запущен.")
+
+    def _clear_session(self):
+        """Удаляет cookies и localStorage перед загрузкой страницы."""
+        if self.driver:
+            try:
+                self.driver.delete_all_cookies()
+                self.driver.execute_script("window.localStorage.clear();")
+                self.driver.execute_script("window.sessionStorage.clear();")
+            except:
+                pass
 
     def _remove_overlays(self):
         evil_classes = [
@@ -213,9 +225,9 @@ class ExchangeRateFetcher:
             self.driver.get(self.URL)
             wait = WebDriverWait(self.driver, 20)
 
-            time.sleep(random.uniform(2, 4))
+            time.sleep(random.uniform(3, 5))
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-            time.sleep(random.uniform(0.5, 1.5))
+            time.sleep(random.uniform(1, 2))
 
             print("🧹 Проверяю, не появилась ли капча...")
             if self._detect_captcha():
@@ -378,6 +390,7 @@ class CurrencyExchanger:
 # --------------------------------------------------------------
 def main():
     db = Database()
+    # По умолчанию локально используется Firefox (можно явно передать ExchangeRateFetcher(browser='firefox'))
     exchanger = CurrencyExchanger(db, fetcher=ExchangeRateFetcher())
     print("🏦 Обменный пункт с живыми курсами готов к работе.")
     while True:
