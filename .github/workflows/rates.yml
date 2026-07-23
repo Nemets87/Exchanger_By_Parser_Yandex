@@ -2,11 +2,11 @@ name: Daily Rates Update
 
 on:
   schedule:
-    - cron: '0 8 * * *'
-  workflow_dispatch:
+    - cron: '0 8 * * *'       # каждый день в 8:00 UTC
+  workflow_dispatch:            # ручной запуск
 
 permissions:
-  contents: write
+  contents: write               # разрешаем пушить коммиты
 
 jobs:
   update-rates:
@@ -35,7 +35,19 @@ jobs:
       - name: Fetch rates and update database
         run: python exchanger.py --fetch-rates --headless --browser chrome
 
+      - name: Upload debug screenshots (if any)
+        if: always()             # сохраняем скриншоты даже при падении
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: |
+            debug_before_button_*.png
+            debug_before_input_*.png
+            error_final.png
+            captcha_detected.png
+
       - name: Commit and push updated database
+        if: success()            # коммитим, только если парсинг успешен
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
