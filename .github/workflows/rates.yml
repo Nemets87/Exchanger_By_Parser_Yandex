@@ -30,7 +30,12 @@ jobs:
           sudo add-apt-repository ppa:mozillateam/ppa -y
           sudo apt-get update
           sudo apt-get install -y firefox
-          which firefox && firefox --version
+          echo "=== Проверка установки Firefox ==="
+          which firefox || echo "firefox не найден в PATH"
+          ls -l /usr/bin/firefox || echo "/usr/bin/firefox не существует"
+          firefox --version 2>/dev/null || echo "firefox --version не сработал"
+          # Найдём все возможные бинарники firefox
+          find / -name "firefox" -type f 2>/dev/null | head -5
 
       - name: Install Python dependencies
         run: pip install selenium
