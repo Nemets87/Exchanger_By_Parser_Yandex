@@ -1,6 +1,17 @@
+r"""
+УНИВЕРСАЛЬНЫЙ ОБМЕННИК ВАЛЮТ (локально + CI)
+Запуск:
+  python exchanger.py                        # интерактивный обменник (Firefox)
+  python exchanger.py --fetch-rates          # получить курсы, сохранить в rates.json
+  python exchanger.py --fetch-rates --headless --browser chrome   # для CI
+"""
+
 import sqlite3
 import time
 import random
+import sys
+import json
+import logging
 from datetime import date
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -8,10 +19,23 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
-from selenium.common.exceptions import ElementClickInterceptedException
+from selenium.common.exceptions import ElementClickInterceptedException, NoSuchElementException, TimeoutException
 
+# ----------------------------- НАСТРОЙКА ЛОГГЕРА -----------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+# ----------------------------- КОНФИГУРАЦИЯ ---------------------------------
 DB_NAME = 'exchanger.db'
+GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
+# =============================================================================
+# 1. БАЗА ДАННЫХ
+# =============================================================================
 class Database:
     def __init__(self, db_name=DB_NAME):
         self.db_name = db_name
@@ -31,7 +55,7 @@ class Database:
                     "INSERT INTO users_balance (Balance_RUB, Balance_USD, Balance_EUR) VALUES (?, ?, ?)",
                     (100000.0, 1000.0, 1000.0)
                 )
-        print("✅ База данных готова.")
+        logger.info("База данных готова.")
 
     def get_balances(self, user_id=1):
         with sqlite3.connect(self.db_name) as conn:
@@ -47,37 +71,44 @@ class Database:
             cur = conn.cursor()
             cur.execute(f"UPDATE users_balance SET Balance_{currency} = Balance_{currency} + ? WHERE UserID = ?", (amount, user_id))
 
+# =============================================================================
+# 2. ПАРСЕР КУРСОВ (Firefox + Chrome, универсальные локаторы)
+# =============================================================================
 class ExchangeRateFetcher:
     URL = "https://yandex.ru/search/?text=%D0%BA%D1%83%D1%80%D1%81+usd+%D0%BA+%D1%80%D1%83%D0%B1%D0%BB%D1%8E&lr=39&clid=2261451&win=620"
     GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
-    # Локаторы для разных браузеров (Firefox / Chrome)
-    # Кнопка переключения валют
     SWITCHER_LOCATORS = [
-        "//button[starts-with(@aria-label, 'Валюта:')]",                     # Firefox
-        "//button[contains(@class,'Select2-Button')]",                       # Chrome
-        "//article//button[.//span[contains(text(),'USD') or contains(text(),'EUR')]]",  # Универсальный
-        "//article//button"                                                  # Совсем общий (запасной)
+        "//button[starts-with(@aria-label, 'Валюта:')]",
+        "//button[contains(@class,'Select2-Button')]",
+        "//article//button[.//span[contains(text(),'USD') or contains(text(),'EUR')]]",
+        "//article//button[contains(.,'USD') or contains(.,'EUR')]",
+        "//button[contains(@aria-label,'Валюта')]"
     ]
-    # Опция USD
-    OPTION_USD_LOCATORS = [
-        "//*[contains(@class,'Select2-Option') and contains(.,'USD')]",
-        "//*[@role='option' and contains(.,'USD')]",
-        "//div[contains(@class,'ConverterSelect')]//*[contains(text(),'USD')]"
-    ]
-    # Опция EUR
-    OPTION_EUR_LOCATORS = [
-        "//*[contains(@class,'Select2-Option') and contains(.,'EUR')]",
-        "//*[@role='option' and contains(.,'EUR')]",
-        "//div[contains(@class,'ConverterSelect')]//*[contains(text(),'EUR')]"
-    ]
-    # Поле ввода курса
+    OPTION_LOCATORS = {
+        'USD': [
+            "//*[contains(@class,'Select2-Option') and contains(.,'USD')]",
+            "//*[@role='option' and contains(.,'USD')]",
+            "//div[contains(@class,'ConverterSelect')]//*[contains(text(),'USD')]",
+            "//li[contains(.,'USD')]"
+        ],
+        'EUR': [
+            "//*[contains(@class,'Select2-Option') and contains(.,'EUR')]",
+            "//*[@role='option' and contains(.,'EUR')]",
+            "//div[contains(@class,'ConverterSelect')]//*[contains(text(),'EUR')]",
+            "//li[contains(.,'EUR')]"
+        ]
+    }
     INPUT_LOCATORS = [
         "//article[.//button[starts-with(@aria-label, 'Валюта:')]]//input[@type='text']",
         "//article//input[@type='text' and contains(@value, ',')]",
-        "//input[@type='text' and contains(@value, ',')]"
+        "//input[@type='text' and contains(@value, ',')]",
+        "//button[starts-with(@aria-label, 'Валюта:')]/following::input[@type='text'][1]",
+        "//button[starts-with(@aria-label, 'Валюта:')]/ancestor::div[1]//input[@type='text']",
+        "//input[contains(@value, ',')]",
+        "//span[contains(text(),'RUB')]/following::input[@type='text']",
+        "//input[@type='text' and string-length(@value) > 0]"
     ]
-    # Кнопки закрытия рекламных окон (оставим старые абсолютные, они редко меняются)
     CANCEL_BTN_ABSOLUTE = "/html/body/main/div[2]/div/div/div[2]/div/div/div/div[3]/button"
     ROBOT_CANCEL_ABSOLUTE = "/html/body/div[1]/div/main/div/form/div[3]/div/div[1]/div[1]"
 
@@ -103,34 +134,37 @@ class ExchangeRateFetcher:
                 options.add_argument('--headless')
             options.add_argument('--private')
             options.add_argument("--disable-blink-features=AutomationControlled")
-            options.set_preference("dom.webnotifications.enabled", False)
-            options.set_preference("dom.push.enabled", False)
             options.set_preference("dom.webdriver.enabled", False)
             options.set_preference("useAutomationExtension", False)
-            options.set_preference("general.useragent.override", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0")
+            options.set_preference("dom.webnotifications.enabled", False)
+            options.set_preference("dom.push.enabled", False)
+            options.set_preference("general.useragent.override",
+                                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0")
             if self.use_local_driver:
                 service = FirefoxService(executable_path=self.GECKODRIVER_PATH)
                 self.driver = webdriver.Firefox(options=options, service=service)
             else:
                 self.driver = webdriver.Firefox(options=options)
-            self._clear_session()
-        print(f"🟢 Браузер {self.browser} успешно запущен.")
-
-    def _clear_session(self):
-        if self.driver:
             try:
                 self.driver.delete_all_cookies()
                 self.driver.execute_script("window.localStorage.clear();")
                 self.driver.execute_script("window.sessionStorage.clear();")
             except:
                 pass
+        logger.info("Браузер %s успешно запущен.", self.browser)
 
     def _remove_overlays(self):
-        evil_classes = [
-            'DistributionSplashScreenModalAddonBefore',
-            'DistributionSplashScreenModalScene',
-            'modal', 'popup', 'overlay', 'dialog'
-        ]
+        self.driver.execute_script("""
+            document.querySelectorAll('[class*="modal"], [class*="overlay"], [class*="popup"], [class*="splash"], [class*="Dialog"]').forEach(el => {
+                el.style.display = 'none';
+                el.remove();
+            });
+            document.body.style.overflow = 'visible';
+            document.body.style.position = 'static';
+        """)
+        time.sleep(0.3)
+        evil_classes = ['DistributionSplashScreenModalAddonBefore', 'DistributionSplashScreenModalScene',
+                        'modal', 'popup', 'overlay', 'dialog', 'splash']
         for cls in evil_classes:
             try:
                 elements = self.driver.find_elements(By.XPATH, f"//*[contains(@class,'{cls}')]")
@@ -157,6 +191,7 @@ class ExchangeRateFetcher:
         for locator in captcha_locators:
             try:
                 self.driver.find_element(By.XPATH, locator)
+                logger.info("Обнаружена капча!")
                 return True
             except:
                 pass
@@ -166,78 +201,68 @@ class ExchangeRateFetcher:
         try:
             element.click()
         except ElementClickInterceptedException:
-            print("   ⚠️ Клик перехвачен! Срочно чищу все окна...")
+            logger.warning("Клик перехвачен, удаляю помехи и кликаю через JS")
             self._remove_overlays()
             time.sleep(0.5)
             self.driver.execute_script("arguments[0].click();", element)
 
     def _find_with_fallbacks(self, locators, description):
-        """Перебирает список локаторов, пока не найдёт кликабельный элемент."""
         wait = WebDriverWait(self.driver, 10)
-        for i, locator in enumerate(locators):
+        for i, locator in enumerate(locators, 1):
+            logger.debug("Пробую локатор #%d для %s: %s", i, description, locator)
             try:
                 element = wait.until(EC.element_to_be_clickable((By.XPATH, locator)))
-                if i > 0:
-                    print(f"   ⚠️ {description}: использован резервный локатор #{i+1}")
+                logger.info("✅ %s найден по локатору #%d", description, i)
                 return element
-            except:
+            except (TimeoutException, NoSuchElementException):
+                logger.debug("Локатор #%d не сработал", i)
                 continue
-        raise Exception(f"Не удалось найти {description} ни по одному локатору")
+        logger.error("Не удалось найти %s ни по одному локатору", description)
+        raise NoSuchElementException(f"Не удалось найти {description}")
 
     def _fetch_single_rate(self, currency):
         wait = WebDriverWait(self.driver, 20)
         self._remove_overlays()
         time.sleep(0.3)
 
-        # Сохраняем отладочный скриншот перед поиском кнопки
-        screenshot_path = f"debug_before_find_{currency}.png"
-        self.driver.save_screenshot(screenshot_path)
-        print(f"   📸 Отладочный скриншот сохранён: {screenshot_path}")
+        self.driver.save_screenshot(f"debug_before_button_{currency}.png")
 
-        # Ищем кнопку переключения валют с помощью нескольких локаторов
         try:
-            switcher = self._find_with_fallbacks(self.SWITCHER_LOCATORS, "кнопка валюты")
-        except Exception as e:
-            # Если не нашли – сохраняем ещё один скриншот и выходим
-            self.driver.save_screenshot("error_no_button.png")
-            raise e
+            WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, "//article[.//input]"))
+            )
+        except:
+            pass
 
+        switcher = self._find_with_fallbacks(self.SWITCHER_LOCATORS, "кнопка валюты")
         current_text = switcher.text.strip()
-        print(f"  🔄 Текущая кнопка: {current_text}")
+        logger.info("Текущая кнопка: '%s'", current_text)
 
         if currency not in current_text.upper():
-            print(f"  🔄 Переключаю на {currency}...")
+            logger.info("Переключаем на %s...", currency)
             self._safe_click(switcher)
             time.sleep(random.uniform(0.5, 0.8))
             self._remove_overlays()
             time.sleep(0.3)
 
-            opt_locators = self.OPTION_USD_LOCATORS if currency == 'USD' else self.OPTION_EUR_LOCATORS
-            option = self._find_with_fallbacks(opt_locators, f"опция {currency}")
+            option = self._find_with_fallbacks(self.OPTION_LOCATORS[currency], f"опция {currency}")
             self._safe_click(option)
 
-            # Ждём, пока на кнопке появится нужная валюта
             wait.until(lambda d: currency in d.find_element(By.XPATH, self.SWITCHER_LOCATORS[0]).text.upper()
                        if d.find_elements(By.XPATH, self.SWITCHER_LOCATORS[0])
-                       else currency in d.find_element(By.XPATH, self.SWITCHER_LOCATORS[1]).text.upper())
-            # Выводим, что получилось
-            new_text = ""
-            for loc in self.SWITCHER_LOCATORS:
-                try:
-                    new_text = self.driver.find_element(By.XPATH, loc).text
-                    break
-                except:
-                    pass
-            print(f"  ✅ Кнопка теперь: {new_text}")
+                       else True)
+            new_text = self.driver.find_element(By.XPATH, self.SWITCHER_LOCATORS[0]).text if self.driver.find_elements(By.XPATH, self.SWITCHER_LOCATORS[0]) else "неизвестно"
+            logger.info("Кнопка теперь: '%s'", new_text)
         else:
-            print(f"  ✅ Валюта {currency} уже выбрана.")
+            logger.info("Валюта %s уже выбрана.", currency)
 
-        # Поле ввода курса
+        self.driver.save_screenshot(f"debug_before_input_{currency}.png")
+
         input_elem = self._find_with_fallbacks(self.INPUT_LOCATORS, "поле ввода курса")
-        print("  🔄 Ожидаю значение курса...")
+        logger.debug("Ожидаем значение курса...")
         wait.until(lambda d: input_elem.get_attribute('value') != '')
         rate_str = input_elem.get_attribute('value')
-        print(f"  🎯 Сырое значение: '{rate_str}'")
+        logger.info("Сырое значение: '%s'", rate_str)
         rate_str = rate_str.replace(',', '.').replace(' ', '')
         return float(rate_str)
 
@@ -251,13 +276,13 @@ class ExchangeRateFetcher:
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
             time.sleep(random.uniform(1, 2))
 
-            print("🧹 Проверяю, не появилась ли капча...")
+            logger.info("Проверяем капчу...")
             if self._detect_captcha():
-                print("❌ Обнаружена капча! Скриншот сохранён.")
+                logger.warning("Капча! Сохраняю скриншот и переключаюсь на резервные курсы.")
                 self.driver.save_screenshot("captcha_detected.png")
                 return None
 
-            print("🧹 Закрываю все всплывающие окна...")
+            logger.info("Закрываем всплывающие окна...")
             self._remove_overlays()
             time.sleep(0.5)
             try:
@@ -275,22 +300,25 @@ class ExchangeRateFetcher:
             self._remove_overlays()
             time.sleep(0.5)
 
-            print("🟢 Приступаю к получению курсов...") 
+            logger.info("Приступаем к получению курсов...")
             usd_rub = self._fetch_single_rate('USD')
             eur_rub = self._fetch_single_rate('EUR')
-            print(f"🟢 Итог: USD/RUB={usd_rub}, EUR/RUB={eur_rub}")
+            logger.info("Итог: USD/RUB=%.2f, EUR/RUB=%.2f", usd_rub, eur_rub)
             return {'USD_RUB': usd_rub, 'EUR_RUB': eur_rub}
 
         except Exception as e:
-            print(f"❌ Ошибка в процессе: {e}")
+            logger.error("Ошибка в процессе: %s", e)
             if self.driver:
                 self.driver.save_screenshot("error_final.png")
             return None
         finally:
             if self.driver:
                 self.driver.quit()
-                print("🟢 Закрываю браузер.")
+                logger.info("Браузер закрыт.")
 
+# =============================================================================
+# 3. ОБМЕННИК
+# =============================================================================
 class CurrencyExchanger:
     CURRENCY_MAP = {'1': 'RUB', '2': 'USD', '3': 'EUR'}
 
@@ -302,6 +330,15 @@ class CurrencyExchanger:
         today = date.today().isoformat()
         with sqlite3.connect(self.db.db_name) as conn:
             cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS rates (
+                    CurrencyFrom TEXT NOT NULL,
+                    CurrencyTo   TEXT NOT NULL,
+                    Rate         REAL NOT NULL,
+                    UpdatedAt    TEXT NOT NULL,
+                    PRIMARY KEY (CurrencyFrom, CurrencyTo, UpdatedAt)
+                );
+            """)
             cur.execute("SELECT CurrencyFrom, CurrencyTo, Rate FROM rates WHERE UpdatedAt = ?", (today,))
             rows = cur.fetchall()
             if len(rows) >= 2:
@@ -312,7 +349,7 @@ class CurrencyExchanger:
                     elif cur_from == 'EUR' and cur_to == 'RUB':
                         rates['EUR_RUB'] = rate
                 if 'USD_RUB' in rates and 'EUR_RUB' in rates:
-                    print("📦 Использую курсы из локальной базы данных.")
+                    logger.info("Использую курсы из локальной БД")
                     return rates['USD_RUB'], rates['EUR_RUB']
         return None
 
@@ -320,21 +357,19 @@ class CurrencyExchanger:
         db_rates = self._load_rates_from_db()
         if db_rates:
             return db_rates
-        print("⏳ Загружаем курсы с биржи...")
+        logger.info("Загружаем курсы с биржи...")
         live = self.fetcher.get_rates()
         if live is None:
-            print("⚠️ Не удалось загрузить курсы. Используем резервные.")
+            logger.warning("Не удалось загрузить курсы. Используем резервные.")
             return 70.0, 80.0
-        print("✅ Актуальные курсы загружены.")
+        logger.info("Актуальные курсы загружены.")
         return live['USD_RUB'], live['EUR_RUB']
 
     def _show_rates(self, usd, eur):
-        usd_to_eur = usd / eur
-        eur_to_usd = eur / usd
         print(f"  1 USD = {usd:.2f} RUB")
         print(f"  1 EUR = {eur:.2f} RUB")
-        print(f"  1 USD = {usd_to_eur:.4f} EUR")
-        print(f"  1 EUR = {eur_to_usd:.4f} USD")
+        print(f"  1 USD = {usd/eur:.4f} EUR")
+        print(f"  1 EUR = {eur/usd:.4f} USD")
 
     def _input_currency(self, prompt):
         print(prompt)
@@ -403,15 +438,56 @@ class CurrencyExchanger:
         for cur, bal in new_balances.items():
             print(f"  {cur}: {bal:.2f}")
 
+# =============================================================================
+# 4. УНИВЕРСАЛЬНЫЙ ЗАПУСК
+# =============================================================================
 def main():
-    db = Database()
-    exchanger = CurrencyExchanger(db, fetcher=ExchangeRateFetcher())
-    print("🏦 Обменный пункт с живыми курсами готов к работе.")
-    while True:
-        exchanger.run()
-        if input("\nХотите совершить ещё один обмен? (y/n): ").strip().lower() != 'y':
-            print("👋 До свидания!")
-            break
+    args = sys.argv[1:]
+    fetch_only = '--fetch-rates' in args
+    headless = '--headless' in args
+    browser = 'chrome' if '--browser' in args and 'chrome' in args else 'firefox'
+
+    if fetch_only:
+        logger.info("📡 Режим получения курсов (браузер: %s)...", browser)
+        fetcher = ExchangeRateFetcher(headless=headless, use_local_driver=False, browser=browser)
+        rates = fetcher.get_rates()
+        if rates:
+            with open('rates.json', 'w', encoding='utf-8') as f:
+                json.dump(rates, f, indent=2)
+            logger.info("Курсы сохранены в rates.json")
+            # Также сохраним в БД для локального использования
+            db = Database()
+            with sqlite3.connect(db.db_name) as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS rates (
+                        CurrencyFrom TEXT NOT NULL,
+                        CurrencyTo   TEXT NOT NULL,
+                        Rate         REAL NOT NULL,
+                        UpdatedAt    TEXT NOT NULL,
+                        PRIMARY KEY (CurrencyFrom, CurrencyTo, UpdatedAt)
+                    );
+                """)
+                today = date.today().isoformat()
+                for cur_from, cur_to, rate in [('USD', 'RUB', rates['USD_RUB']), ('EUR', 'RUB', rates['EUR_RUB'])]:
+                    cur.execute(
+                        "INSERT OR REPLACE INTO rates (CurrencyFrom, CurrencyTo, Rate, UpdatedAt) VALUES (?, ?, ?, ?)",
+                        (cur_from, cur_to, rate, today)
+                    )
+                conn.commit()
+            logger.info("Курсы также записаны в базу данных.")
+        else:
+            logger.error("Не удалось получить курсы.")
+            sys.exit(1)
+    else:
+        db = Database()
+        exchanger = CurrencyExchanger(db)
+        logger.info("🏦 Обменный пункт с живыми курсами готов к работе.")
+        while True:
+            exchanger.run()
+            if input("\nХотите совершить ещё один обмен? (y/n): ").strip().lower() != 'y':
+                print("👋 До свидания!")
+                break
 
 if __name__ == "__main__":
     main()
