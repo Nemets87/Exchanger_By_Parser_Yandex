@@ -2,11 +2,11 @@ name: Daily Rates Update
 
 on:
   schedule:
-    - cron: '0 8 * * *'       # каждый день в 8:00 UTC
-  workflow_dispatch:            # ручной запуск
+    - cron: '0 8 * * *'
+  workflow_dispatch:
 
 permissions:
-  contents: write               # разрешаем пушить коммиты
+  contents: write
 
 jobs:
   update-rates:
@@ -35,8 +35,15 @@ jobs:
       - name: Fetch rates and update database
         run: python exchanger.py --fetch-rates --headless --browser chrome
 
+      # Показываем, какие скриншоты были созданы
+      - name: List generated screenshots
+        if: always()
+        run: |
+          echo "Содержимое папки:"
+          ls -la debug_*.png error_final.png captcha_detected.png 2>/dev/null || echo "Скриншоты не найдены"
+
       - name: Upload debug screenshots (if any)
-        if: always()             # сохраняем скриншоты даже при падении
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: debug-screenshots
@@ -47,7 +54,7 @@ jobs:
             captcha_detected.png
 
       - name: Commit and push updated database
-        if: success()            # коммитим, только если парсинг успешен
+        if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
