@@ -264,7 +264,7 @@ class ExchangeRateFetcher:
             self._remove_overlays()
             time.sleep(0.5)
 
-            print("🟢 Приступаю к получению курсов...")
+            print("🟢 Приступаю к получению курсов...") 
             usd_rub = self._fetch_single_rate('USD')
             eur_rub = self._fetch_single_rate('EUR')
             print(f"🟢 Итог: USD/RUB={usd_rub}, EUR/RUB={eur_rub}")
