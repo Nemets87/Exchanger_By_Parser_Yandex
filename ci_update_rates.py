@@ -4,10 +4,11 @@ from live_exchanger import ExchangeRateFetcher, DB_NAME
 
 def update_rates_in_db():
     print("Запуск обновления курсов в CI (браузер Chrome)...")
+    # ВАЖНО: явно указываем browser='chrome'
     fetcher = ExchangeRateFetcher(
         headless=True,
         use_local_driver=False,
-        browser='chrome'           # В CI всегда Chrome
+        browser='chrome'
     )
     rates = fetcher.get_rates()
     if rates is None:
