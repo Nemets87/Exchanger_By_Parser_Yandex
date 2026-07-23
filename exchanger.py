@@ -1,5 +1,7 @@
 r"""
-УНИВЕРСАЛЬНЫЙ ОБМЕННИК ВАЛЮТ (локально + CI)
+Универсальный обменник валют с живыми курсами (парсинг Яндекс.Конвертера).
+Поддерживает Firefox (локально) и Chrome (CI).
+Логирование, анти-оверлей, адаптивные локаторы, обработка капчи.
 Запуск:
   python exchanger.py                        # интерактивный обменник (Firefox)
   python exchanger.py --fetch-rates          # получить курсы, сохранить в rates.json
@@ -21,7 +23,9 @@ from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.common.exceptions import ElementClickInterceptedException, NoSuchElementException, TimeoutException
 
-# ----------------------------- НАСТРОЙКА ЛОГГЕРА -----------------------------
+# -----------------------------------------------------------------------------
+# ЛОГГЕР
+# -----------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -29,7 +33,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ----------------------------- КОНФИГУРАЦИЯ ---------------------------------
+# -----------------------------------------------------------------------------
+# КОНФИГУРАЦИЯ
+# -----------------------------------------------------------------------------
 DB_NAME = 'exchanger.db'
 GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
@@ -78,25 +84,29 @@ class ExchangeRateFetcher:
     URL = "https://yandex.ru/search/?text=%D0%BA%D1%83%D1%80%D1%81+usd+%D0%BA+%D1%80%D1%83%D0%B1%D0%BB%D1%8E&lr=39&clid=2261451&win=620"
     GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
+    # ---- Локаторы (работают и в Firefox, и в Chrome) ----
     SWITCHER_LOCATORS = [
-        "//button[starts-with(@aria-label, 'Валюта:')]",
-        "//button[contains(@class,'Select2-Button')]",
-        "//article//button[.//span[contains(text(),'USD') or contains(text(),'EUR')]]",
+        "//button[starts-with(@aria-label, 'Валюта:')]",                     # Firefox
+        "//button[contains(@class,'Select2-Button')]",                       # Chrome
+        "//button[.//span[contains(text(),'USD') or contains(text(),'EUR')]]",
         "//article//button[contains(.,'USD') or contains(.,'EUR')]",
-        "//button[contains(@aria-label,'Валюта')]"
+        "//button[contains(@aria-label,'Валюта')]",
+        "//article//button[.//img[contains(@alt,'USD') or contains(@alt,'EUR')]]",  # Chrome
     ]
     OPTION_LOCATORS = {
         'USD': [
             "//*[contains(@class,'Select2-Option') and contains(.,'USD')]",
             "//*[@role='option' and contains(.,'USD')]",
             "//div[contains(@class,'ConverterSelect')]//*[contains(text(),'USD')]",
-            "//li[contains(.,'USD')]"
+            "//li[contains(.,'USD')]",
+            "//*[contains(text(),'Доллар')]",
         ],
         'EUR': [
             "//*[contains(@class,'Select2-Option') and contains(.,'EUR')]",
             "//*[@role='option' and contains(.,'EUR')]",
             "//div[contains(@class,'ConverterSelect')]//*[contains(text(),'EUR')]",
-            "//li[contains(.,'EUR')]"
+            "//li[contains(.,'EUR')]",
+            "//*[contains(text(),'Евро')]",
         ]
     }
     INPUT_LOCATORS = [
@@ -107,7 +117,7 @@ class ExchangeRateFetcher:
         "//button[starts-with(@aria-label, 'Валюта:')]/ancestor::div[1]//input[@type='text']",
         "//input[contains(@value, ',')]",
         "//span[contains(text(),'RUB')]/following::input[@type='text']",
-        "//input[@type='text' and string-length(@value) > 0]"
+        "//input[@type='text' and string-length(@value) > 0]",
     ]
     CANCEL_BTN_ABSOLUTE = "/html/body/main/div[2]/div/div/div[2]/div/div/div/div[3]/button"
     ROBOT_CANCEL_ABSOLUTE = "/html/body/div[1]/div/main/div/form/div[3]/div/div[1]/div[1]"
@@ -118,6 +128,7 @@ class ExchangeRateFetcher:
         self.browser = browser
         self.driver = None
 
+    # --------------------- Браузер ---------------------
     def _start_browser(self):
         if self.browser == 'chrome':
             options = webdriver.ChromeOptions()
@@ -153,6 +164,7 @@ class ExchangeRateFetcher:
                 pass
         logger.info("Браузер %s успешно запущен.", self.browser)
 
+    # --------------------- Очистка оверлеев ---------------------
     def _remove_overlays(self):
         self.driver.execute_script("""
             document.querySelectorAll('[class*="modal"], [class*="overlay"], [class*="popup"], [class*="splash"], [class*="Dialog"]').forEach(el => {
@@ -181,6 +193,7 @@ class ExchangeRateFetcher:
         except:
             pass
 
+    # --------------------- Капча ---------------------
     def _detect_captcha(self):
         captcha_locators = [
             "//iframe[contains(@src,'captcha')]",
@@ -197,6 +210,7 @@ class ExchangeRateFetcher:
                 pass
         return False
 
+    # --------------------- Безопасный клик ---------------------
     def _safe_click(self, element):
         try:
             element.click()
@@ -206,6 +220,7 @@ class ExchangeRateFetcher:
             time.sleep(0.5)
             self.driver.execute_script("arguments[0].click();", element)
 
+    # --------------------- Универсальный поиск ---------------------
     def _find_with_fallbacks(self, locators, description):
         wait = WebDriverWait(self.driver, 10)
         for i, locator in enumerate(locators, 1):
@@ -220,6 +235,7 @@ class ExchangeRateFetcher:
         logger.error("Не удалось найти %s ни по одному локатору", description)
         raise NoSuchElementException(f"Не удалось найти {description}")
 
+    # --------------------- Получение одного курса ---------------------
     def _fetch_single_rate(self, currency):
         wait = WebDriverWait(self.driver, 20)
         self._remove_overlays()
@@ -227,6 +243,7 @@ class ExchangeRateFetcher:
 
         self.driver.save_screenshot(f"debug_before_button_{currency}.png")
 
+        # Принудительная активация виджета
         try:
             WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, "//article[.//input]"))
@@ -248,6 +265,7 @@ class ExchangeRateFetcher:
             option = self._find_with_fallbacks(self.OPTION_LOCATORS[currency], f"опция {currency}")
             self._safe_click(option)
 
+            # Ждём обновления кнопки
             wait.until(lambda d: currency in d.find_element(By.XPATH, self.SWITCHER_LOCATORS[0]).text.upper()
                        if d.find_elements(By.XPATH, self.SWITCHER_LOCATORS[0])
                        else True)
@@ -266,6 +284,7 @@ class ExchangeRateFetcher:
         rate_str = rate_str.replace(',', '.').replace(' ', '')
         return float(rate_str)
 
+    # --------------------- Главный метод ---------------------
     def get_rates(self):
         try:
             self._start_browser()
@@ -455,7 +474,6 @@ def main():
             with open('rates.json', 'w', encoding='utf-8') as f:
                 json.dump(rates, f, indent=2)
             logger.info("Курсы сохранены в rates.json")
-            # Также сохраним в БД для локального использования
             db = Database()
             with sqlite3.connect(db.db_name) as conn:
                 cur = conn.cursor()
