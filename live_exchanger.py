@@ -10,14 +10,8 @@ from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.common.exceptions import ElementClickInterceptedException
 
-# --------------------------------------------------------------
-# Глобальное имя базы данных
-# --------------------------------------------------------------
 DB_NAME = 'exchanger.db'
 
-# --------------------------------------------------------------
-# 1. Класс для работы с базой данных
-# --------------------------------------------------------------
 class Database:
     def __init__(self, db_name=DB_NAME):
         self.db_name = db_name
@@ -53,21 +47,15 @@ class Database:
             cur = conn.cursor()
             cur.execute(f"UPDATE users_balance SET Balance_{currency} = Balance_{currency} + ? WHERE UserID = ?", (amount, user_id))
 
-# --------------------------------------------------------------
-# 2. Класс для получения курсов (Selenium + анти-капча)
-# --------------------------------------------------------------
 class ExchangeRateFetcher:
-    """Парсер курсов с усиленной защитой от любых всплывающих окон. Поддерживает Firefox и Chrome."""
     URL = "https://yandex.ru/search/?text=%D0%BA%D1%83%D1%80%D1%81+usd+%D0%BA+%D1%80%D1%83%D0%B1%D0%BB%D1%8E&lr=39&clid=2261451&win=620"
     GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
-    # Стабильные локаторы (основные)
     SWITCHER_STABLE = "//button[starts-with(@aria-label, 'Валюта:')]"
     OPTION_USD_STABLE = "//*[contains(@class,'Select2-Option') and contains(.,'USD')]"
     OPTION_EUR_STABLE = "//*[contains(@class,'Select2-Option') and contains(.,'EUR')]"
     INPUT_STABLE = "//article[.//button[starts-with(@aria-label, 'Валюта:')]]//input[@type='text']"
 
-    # Абсолютные локаторы (резервные)
     SWITCHER_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/button"
     OPTION_USD_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/div/div/div[2]/div/div[1]"
     OPTION_EUR_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/div/div/div[3]/div/div[1]"
@@ -78,7 +66,7 @@ class ExchangeRateFetcher:
     def __init__(self, headless=False, use_local_driver=True, browser='firefox'):
         self.headless = headless
         self.use_local_driver = use_local_driver
-        self.browser = browser  # 'firefox' или 'chrome'
+        self.browser = browser          # 'firefox' или 'chrome'
         self.driver = None
 
     def _start_browser(self):
@@ -91,32 +79,26 @@ class ExchangeRateFetcher:
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
             self.driver = webdriver.Chrome(options=options)
-        else:  # Firefox
+        else:
             options = FirefoxOptions()
             if self.headless:
                 options.add_argument('--headless')
-            # Приватный режим для стелса
             options.add_argument('--private')
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.set_preference("dom.webnotifications.enabled", False)
             options.set_preference("dom.push.enabled", False)
             options.set_preference("dom.webdriver.enabled", False)
             options.set_preference("useAutomationExtension", False)
-            options.set_preference(
-                "general.useragent.override",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
-            )
+            options.set_preference("general.useragent.override", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0")
             if self.use_local_driver:
                 service = FirefoxService(executable_path=self.GECKODRIVER_PATH)
                 self.driver = webdriver.Firefox(options=options, service=service)
             else:
                 self.driver = webdriver.Firefox(options=options)
-            # Очищаем сессию для анонимности
             self._clear_session()
         print(f"🟢 Браузер {self.browser} успешно запущен.")
 
     def _clear_session(self):
-        """Удаляет cookies и localStorage перед загрузкой страницы."""
         if self.driver:
             try:
                 self.driver.delete_all_cookies()
@@ -269,9 +251,6 @@ class ExchangeRateFetcher:
                 self.driver.quit()
                 print("🟢 Закрываю браузер.")
 
-# --------------------------------------------------------------
-# 3. Класс обменника валют
-# --------------------------------------------------------------
 class CurrencyExchanger:
     CURRENCY_MAP = {'1': 'RUB', '2': 'USD', '3': 'EUR'}
 
@@ -280,7 +259,6 @@ class CurrencyExchanger:
         self.fetcher = fetcher or ExchangeRateFetcher()
 
     def _load_rates_from_db(self):
-        """Пытается получить сегодняшние курсы из таблицы rates."""
         today = date.today().isoformat()
         with sqlite3.connect(self.db.db_name) as conn:
             cur = conn.cursor()
@@ -385,12 +363,8 @@ class CurrencyExchanger:
         for cur, bal in new_balances.items():
             print(f"  {cur}: {bal:.2f}")
 
-# --------------------------------------------------------------
-# 4. Запуск
-# --------------------------------------------------------------
 def main():
     db = Database()
-    # По умолчанию локально используется Firefox (можно явно передать ExchangeRateFetcher(browser='firefox'))
     exchanger = CurrencyExchanger(db, fetcher=ExchangeRateFetcher())
     print("🏦 Обменный пункт с живыми курсами готов к работе.")
     while True:
