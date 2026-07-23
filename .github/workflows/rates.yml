@@ -35,13 +35,6 @@ jobs:
       - name: Fetch rates and update database
         run: python exchanger.py --fetch-rates --headless --browser chrome
 
-      # Показываем, какие скриншоты были созданы
-      - name: List generated screenshots
-        if: always()
-        run: |
-          echo "Содержимое папки:"
-          ls -la debug_*.png error_final.png captcha_detected.png 2>/dev/null || echo "Скриншоты не найдены"
-
       - name: Upload debug screenshots (if any)
         if: always()
         uses: actions/upload-artifact@v4
