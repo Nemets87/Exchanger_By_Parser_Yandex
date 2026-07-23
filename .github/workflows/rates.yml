@@ -24,11 +24,9 @@ jobs:
 
       - name: Remove snap remnants and install Chrome
         run: |
-          # Полностью удаляем snap firefox и geckodriver, чтобы Selenium не путался
           sudo snap remove firefox 2>/dev/null || true
           sudo snap remove geckodriver 2>/dev/null || true
           sudo rm -f /snap/bin/geckodriver
-          # Устанавливаем Chrome
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
           sudo apt-get update
@@ -39,6 +37,16 @@ jobs:
 
       - name: Fetch rates and update database
         run: python ci_update_rates.py
+
+      - name: Upload debug screenshots (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshot
+          path: |
+            debug_before_find_*.png
+            error_no_button.png
+            error_final.png
 
       - name: Commit and push updated database
         run: |
