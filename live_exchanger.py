@@ -51,22 +51,40 @@ class ExchangeRateFetcher:
     URL = "https://yandex.ru/search/?text=%D0%BA%D1%83%D1%80%D1%81+usd+%D0%BA+%D1%80%D1%83%D0%B1%D0%BB%D1%8E&lr=39&clid=2261451&win=620"
     GECKODRIVER_PATH = r"C:\WebDriver\geckodriver.exe"
 
-    SWITCHER_STABLE = "//button[starts-with(@aria-label, 'Валюта:')]"
-    OPTION_USD_STABLE = "//*[contains(@class,'Select2-Option') and contains(.,'USD')]"
-    OPTION_EUR_STABLE = "//*[contains(@class,'Select2-Option') and contains(.,'EUR')]"
-    INPUT_STABLE = "//article[.//button[starts-with(@aria-label, 'Валюта:')]]//input[@type='text']"
-
-    SWITCHER_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/button"
-    OPTION_USD_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/div/div/div[2]/div/div[1]"
-    OPTION_EUR_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[1]/span/div/div/div[3]/div/div[1]"
-    INPUT_ABSOLUTE = "/html/body/main/div[1]/div[3]/div/div/div[1]/ul/li[2]/div/article/div[1]/div[2]/div/span/input"
+    # Локаторы для разных браузеров (Firefox / Chrome)
+    # Кнопка переключения валют
+    SWITCHER_LOCATORS = [
+        "//button[starts-with(@aria-label, 'Валюта:')]",                     # Firefox
+        "//button[contains(@class,'Select2-Button')]",                       # Chrome
+        "//article//button[.//span[contains(text(),'USD') or contains(text(),'EUR')]]",  # Универсальный
+        "//article//button"                                                  # Совсем общий (запасной)
+    ]
+    # Опция USD
+    OPTION_USD_LOCATORS = [
+        "//*[contains(@class,'Select2-Option') and contains(.,'USD')]",
+        "//*[@role='option' and contains(.,'USD')]",
+        "//div[contains(@class,'ConverterSelect')]//*[contains(text(),'USD')]"
+    ]
+    # Опция EUR
+    OPTION_EUR_LOCATORS = [
+        "//*[contains(@class,'Select2-Option') and contains(.,'EUR')]",
+        "//*[@role='option' and contains(.,'EUR')]",
+        "//div[contains(@class,'ConverterSelect')]//*[contains(text(),'EUR')]"
+    ]
+    # Поле ввода курса
+    INPUT_LOCATORS = [
+        "//article[.//button[starts-with(@aria-label, 'Валюта:')]]//input[@type='text']",
+        "//article//input[@type='text' and contains(@value, ',')]",
+        "//input[@type='text' and contains(@value, ',')]"
+    ]
+    # Кнопки закрытия рекламных окон (оставим старые абсолютные, они редко меняются)
     CANCEL_BTN_ABSOLUTE = "/html/body/main/div[2]/div/div/div[2]/div/div/div/div[3]/button"
     ROBOT_CANCEL_ABSOLUTE = "/html/body/div[1]/div/main/div/form/div[3]/div/div[1]/div[1]"
 
     def __init__(self, headless=False, use_local_driver=True, browser='firefox'):
         self.headless = headless
         self.use_local_driver = use_local_driver
-        self.browser = browser          # 'firefox' или 'chrome'
+        self.browser = browser
         self.driver = None
 
     def _start_browser(self):
@@ -153,13 +171,14 @@ class ExchangeRateFetcher:
             time.sleep(0.5)
             self.driver.execute_script("arguments[0].click();", element)
 
-    def _find_with_fallback(self, stable_xpath, absolute_xpath, description):
+    def _find_with_fallbacks(self, locators, description):
+        """Перебирает список локаторов, пока не найдёт кликабельный элемент."""
         wait = WebDriverWait(self.driver, 10)
-        for attempt, locator in enumerate([stable_xpath, absolute_xpath], 1):
+        for i, locator in enumerate(locators):
             try:
                 element = wait.until(EC.element_to_be_clickable((By.XPATH, locator)))
-                if attempt == 2:
-                    print(f"   ⚠️ {description}: стабильный локатор не сработал, использован абсолютный.")
+                if i > 0:
+                    print(f"   ⚠️ {description}: использован резервный локатор #{i+1}")
                 return element
             except:
                 continue
@@ -170,7 +189,8 @@ class ExchangeRateFetcher:
         self._remove_overlays()
         time.sleep(0.3)
 
-        switcher = self._find_with_fallback(self.SWITCHER_STABLE, self.SWITCHER_ABSOLUTE, "кнопка валюты")
+        # Ищем кнопку переключения валют с помощью нескольких локаторов
+        switcher = self._find_with_fallbacks(self.SWITCHER_LOCATORS, "кнопка валюты")
         current_text = switcher.text.strip()
         print(f"  🔄 Текущая кнопка: {current_text}")
 
@@ -181,19 +201,28 @@ class ExchangeRateFetcher:
             self._remove_overlays()
             time.sleep(0.3)
 
-            stable_opt = self.OPTION_USD_STABLE if currency == 'USD' else self.OPTION_EUR_STABLE
-            absolute_opt = self.OPTION_USD_ABSOLUTE if currency == 'USD' else self.OPTION_EUR_ABSOLUTE
-            option = self._find_with_fallback(stable_opt, absolute_opt, f"опция {currency}")
+            opt_locators = self.OPTION_USD_LOCATORS if currency == 'USD' else self.OPTION_EUR_LOCATORS
+            option = self._find_with_fallbacks(opt_locators, f"опция {currency}")
             self._safe_click(option)
 
-            wait.until(lambda d: currency in d.find_element(By.XPATH, self.SWITCHER_STABLE).text.upper()
-                       if d.find_elements(By.XPATH, self.SWITCHER_STABLE)
-                       else currency in d.find_element(By.XPATH, self.SWITCHER_ABSOLUTE).text.upper())
-            print(f"  ✅ Кнопка теперь: {self.driver.find_element(By.XPATH, self.SWITCHER_STABLE).text if self.driver.find_elements(By.XPATH, self.SWITCHER_STABLE) else self.driver.find_element(By.XPATH, self.SWITCHER_ABSOLUTE).text}")
+            # Ждём, пока на кнопке появится нужная валюта
+            wait.until(lambda d: currency in d.find_element(By.XPATH, self.SWITCHER_LOCATORS[0]).text.upper()
+                       if d.find_elements(By.XPATH, self.SWITCHER_LOCATORS[0])
+                       else currency in d.find_element(By.XPATH, self.SWITCHER_LOCATORS[1]).text.upper())
+            # Выводим, что получилось
+            new_text = ""
+            for loc in self.SWITCHER_LOCATORS:
+                try:
+                    new_text = self.driver.find_element(By.XPATH, loc).text
+                    break
+                except:
+                    pass
+            print(f"  ✅ Кнопка теперь: {new_text}")
         else:
             print(f"  ✅ Валюта {currency} уже выбрана.")
 
-        input_elem = self._find_with_fallback(self.INPUT_STABLE, self.INPUT_ABSOLUTE, "поле ввода курса")
+        # Поле ввода курса
+        input_elem = self._find_with_fallbacks(self.INPUT_LOCATORS, "поле ввода курса")
         print("  🔄 Ожидаю значение курса...")
         wait.until(lambda d: input_elem.get_attribute('value') != '')
         rate_str = input_elem.get_attribute('value')
