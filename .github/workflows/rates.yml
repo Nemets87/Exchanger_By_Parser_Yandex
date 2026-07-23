@@ -24,21 +24,20 @@ jobs:
 
       - name: Install Firefox from PPA (no snap)
         run: |
-          # Удаляем snap-версии, если есть
           sudo snap remove firefox 2>/dev/null || true
           sudo snap remove geckodriver 2>/dev/null || true
           sudo rm -f /snap/bin/geckodriver
-          # Добавляем PPA и устанавливаем обычный Firefox
           sudo add-apt-repository ppa:mozillateam/ppa -y
           sudo apt-get update
           sudo apt-get install -y firefox
-          # Проверяем, что Firefox на месте
           which firefox && firefox --version
 
       - name: Install Python dependencies
         run: pip install selenium
 
       - name: Fetch rates and update database
+        env:
+          FIREFOX_BINARY: /usr/bin/firefox
         run: python exchanger.py --fetch-rates --headless
 
       - name: Upload debug screenshots (if any)
