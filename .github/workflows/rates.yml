@@ -22,27 +22,23 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Firefox from PPA (no snap)
+      - name: Install Google Chrome
         run: |
-          sudo snap remove firefox 2>/dev/null || true
-          sudo snap remove geckodriver 2>/dev/null || true
-          sudo rm -f /snap/bin/geckodriver
-          sudo add-apt-repository ppa:mozillateam/ppa -y
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
           sudo apt-get update
-          sudo apt-get install -y firefox
-          # Убедимся, что Firefox доступен
-          which firefox && firefox --version
+          sudo apt-get install -y google-chrome-stable
 
       - name: Install Python dependencies
         run: pip install selenium
 
       - name: Fetch rates and update database
-        run: python ci_update_rates.py
+        run: python exchanger.py --fetch-rates --headless --browser chrome
 
       - name: Commit and push updated database
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add exchanger.db
+          git add exchanger.db rates.json
           git diff --staged --quiet || git commit -m "Обновление курсов валют [skip ci]"
           git push
