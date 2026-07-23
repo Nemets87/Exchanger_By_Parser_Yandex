@@ -189,8 +189,19 @@ class ExchangeRateFetcher:
         self._remove_overlays()
         time.sleep(0.3)
 
+        # Сохраняем отладочный скриншот перед поиском кнопки
+        screenshot_path = f"debug_before_find_{currency}.png"
+        self.driver.save_screenshot(screenshot_path)
+        print(f"   📸 Отладочный скриншот сохранён: {screenshot_path}")
+
         # Ищем кнопку переключения валют с помощью нескольких локаторов
-        switcher = self._find_with_fallbacks(self.SWITCHER_LOCATORS, "кнопка валюты")
+        try:
+            switcher = self._find_with_fallbacks(self.SWITCHER_LOCATORS, "кнопка валюты")
+        except Exception as e:
+            # Если не нашли – сохраняем ещё один скриншот и выходим
+            self.driver.save_screenshot("error_no_button.png")
+            raise e
+
         current_text = switcher.text.strip()
         print(f"  🔄 Текущая кнопка: {current_text}")
 
